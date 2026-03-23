@@ -8,6 +8,16 @@ export type SolverResult =
   | { status: "timeout" }
   | { status: "error"; message: string };
 
+const SOLVED_PAGE = `data:text/html,${encodeURIComponent(`<!DOCTYPE html>
+<html><head><style>
+  body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#0a0a0a; color:#4ade80; font-family:system-ui,sans-serif; text-align:center; }
+  h1 { font-size:2rem; font-weight:600; margin-bottom:0.5rem; }
+  p { color:#a1a1aa; font-size:1.1rem; }
+</style></head><body>
+  <div><h1>Challenge solved</h1><p>You can close this tab and return to Job Ops.</p></div>
+</body></html>`)}`;
+
 /**
  * Opens a headed browser for a human to solve a Cloudflare challenge.
  *
@@ -54,6 +64,7 @@ export async function solveChallenge(
     // browser session established a valid cf_clearance
     if (!(await isChallengePage(page))) {
       await saveCookies(context, extractorId, storageDir);
+      await showSolvedPage(page);
       return { status: "solved" };
     }
 
@@ -66,6 +77,7 @@ export async function solveChallenge(
 
       if (!(await isChallengePage(page))) {
         await saveCookies(context, extractorId, storageDir);
+        await showSolvedPage(page);
         return { status: "solved" };
       }
     }
@@ -78,5 +90,19 @@ export async function solveChallenge(
     };
   } finally {
     await browser?.close();
+  }
+}
+
+/** Show a "challenge solved" page so the VNC user knows they can close the tab. */
+async function showSolvedPage(page: {
+  goto: (url: string, opts?: { timeout?: number }) => Promise<unknown>;
+  waitForTimeout: (ms: number) => Promise<void>;
+}): Promise<void> {
+  try {
+    await page.goto(SOLVED_PAGE, { timeout: 5_000 });
+    // Brief pause so the user sees the message before the browser closes
+    await page.waitForTimeout(3_000);
+  } catch {
+    // Non-critical - the solve already succeeded
   }
 }

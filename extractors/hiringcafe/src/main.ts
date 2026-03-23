@@ -661,6 +661,9 @@ async function run(): Promise<void> {
         page,
         BASE_URL,
         {
+          // Single attempt: hiring.cafe's CF challenge is deterministic - if it
+          // shows up, retrying with the same fingerprint won't help. The pipeline
+          // pauses and the solver handles it with a fresh headed browser instead.
           maxAttempts: 1,
           waitUntil: "domcontentloaded",
           navigationTimeoutMs: 60_000,

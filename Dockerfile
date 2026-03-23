@@ -111,6 +111,11 @@ RUN npm run build:client
 # ============================================================================
 FROM runtime-base AS runtime-node-deps
 
+# Install virtual display dependencies for the headed Cloudflare challenge solver.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb x11vnc novnc websockify && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
 # Copy package files for production dependency installation.
 COPY package*.json ./
 COPY docs-site/package*.json ./docs-site/
@@ -184,10 +189,17 @@ COPY extractors/browser-utils ./extractors/browser-utils
 # Create runtime directories.
 RUN mkdir -p /app/data/pdfs /app/codex-home
 
+ENV DISPLAY=:99
+ENV NOVNC_PORT=6080
+
 EXPOSE 3001
+EXPOSE 6080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3001/health || exit 1
 
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 WORKDIR /app/orchestrator
-CMD ["sh", "-c", "npx tsx src/server/db/migrate.ts && npm run start"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
