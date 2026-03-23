@@ -661,10 +661,9 @@ async function run(): Promise<void> {
         page,
         BASE_URL,
         {
+          maxAttempts: 1,
           waitUntil: "domcontentloaded",
           navigationTimeoutMs: 60_000,
-          onRetry: ({ attempt, reason }) =>
-            console.warn(`Initial navigation retry ${attempt}: ${reason}`),
         },
       );
 

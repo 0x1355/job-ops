@@ -18,8 +18,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createLaunchOptions,
+  invalidateCookies,
   loadCookies,
   navigateWithChallenge,
+  readCookieJar,
   saveCookies,
 } from "browser-utils";
 import {
@@ -343,13 +345,19 @@ async function loginWithBrowser(
 ): Promise<UkVisaJobsAuthSession> {
   const { firefox } = await import("playwright");
   const headless = process.env.UKVISAJOBS_HEADLESS !== "false";
-  const { launchOptions } = await createLaunchOptions({ headless });
-  const browser = await firefox.launch(launchOptions);
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
   const EXTRACTOR_ID = "ukvisajobs";
   const STORAGE_DIR = join(__dirname, "../storage");
+
+  // Read saved UA before launching - CF ties cf_clearance to the UA that
+  // solved the challenge, so we must reuse it.
+  const cookieJar = await readCookieJar(EXTRACTOR_ID, STORAGE_DIR);
+
+  const { launchOptions } = await createLaunchOptions({ headless });
+  const browser = await firefox.launch(launchOptions);
+  const context = await browser.newContext(
+    cookieJar.userAgent ? { userAgent: cookieJar.userAgent } : undefined,
+  );
+  const page = await context.newPage();
 
   try {
     // Restore CF cookies from a previous run — may skip the challenge
@@ -363,6 +371,7 @@ async function loginWithBrowser(
       challengeTimeoutMs: 30_000,
     });
     if (challengeResult.status === "timeout") {
+      await invalidateCookies(EXTRACTOR_ID, STORAGE_DIR);
       emitProgress("challenge_required", { url: SIGNIN_URL });
       throw new Error("Cloudflare challenge timed out on sign-in page");
     }
@@ -390,6 +399,7 @@ async function loginWithBrowser(
       { waitUntil: "networkidle", challengeTimeoutMs: 30_000 },
     );
     if (jobsChallenge.status === "timeout") {
+      await invalidateCookies(EXTRACTOR_ID, STORAGE_DIR);
       emitProgress("challenge_required", { url: OPEN_JOBS_URL });
       throw new Error("Cloudflare challenge timed out on open-jobs page");
     }

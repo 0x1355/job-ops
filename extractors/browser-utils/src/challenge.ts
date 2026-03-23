@@ -44,7 +44,7 @@ export function isChallengeResponse(response: Response): boolean {
   const status = response.status();
   // CF challenges typically return 403 or 503 with specific headers
   if (status !== 403 && status !== 503) return false;
-  const server = response.headers()["server"] ?? "";
+  const server = response.headers().server ?? "";
   return server.toLowerCase().includes("cloudflare");
 }
 
