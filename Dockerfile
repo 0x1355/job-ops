@@ -85,14 +85,15 @@ ENV PYTHON_PATH=/usr/bin/python3
 ENV DATA_DIR=/app/data
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Install only runtime dependencies
+# Install runtime dependencies + virtual display for headed CF challenge solver
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     python3 python3-minimal libpython3.11-minimal \
     python3-pip \
     libgtk-3-0 libgtk-3-common \
     libdbus-glib-1-2 libxt6 libx11-xcb1 libasound2 \
-    curl && \
+    curl \
+    xvfb x11vnc novnc websockify && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 WORKDIR /app
@@ -139,10 +140,17 @@ WORKDIR /app
 # Create data directory
 RUN mkdir -p /app/data/pdfs
 
+ENV DISPLAY=:99
+ENV NOVNC_PORT=6080
+
 EXPOSE 3001
+EXPOSE 6080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3001/health || exit 1
 
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 WORKDIR /app/orchestrator
-CMD ["sh", "-c", "npx tsx src/server/db/migrate.ts && npm run start"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
