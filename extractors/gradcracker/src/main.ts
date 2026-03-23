@@ -2,8 +2,10 @@
 
 import {
   createLaunchOptions,
+  invalidateCookies,
   isChallengePage,
   loadCookies,
+  readCookieJar,
   saveCookies,
   waitForChallengeResolution,
 } from "browser-utils";
@@ -67,6 +69,10 @@ initJobOpsProgress(startUrls.length);
 const EXTRACTOR_ID = "gradcracker";
 const STORAGE_DIR = "./storage";
 
+// Read saved UA before launching - CF ties cf_clearance to the UA that
+// solved the challenge, so we must reuse it.
+const cookieJar = await readCookieJar(EXTRACTOR_ID, STORAGE_DIR);
+
 const { launchOptions } = await createLaunchOptions({ headless: true });
 
 // Track whether we've loaded cookies for the first request
@@ -90,6 +96,9 @@ const crawler = new PlaywrightCrawler({
   launchContext: {
     launcher: firefox,
     launchOptions,
+    // Reuse the UA from the last challenge solve so cf_clearance cookies match.
+    // CF ties the cookie to the UA + TLS fingerprint that solved the challenge.
+    ...(cookieJar.userAgent ? { userAgent: cookieJar.userAgent } : {}),
   },
 
   // Load saved CF cookies before navigation — may skip challenges entirely
@@ -121,6 +130,8 @@ const crawler = new PlaywrightCrawler({
         // Persist cookies so future requests (and runs) can skip the challenge
         await saveCookies(page.context(), EXTRACTOR_ID, STORAGE_DIR);
       } else {
+        // Stale cookies won't help - wipe them so the solver starts fresh
+        await invalidateCookies(EXTRACTOR_ID, STORAGE_DIR);
         // Signal the orchestrator that a human needs to solve this challenge
         emitChallengeRequired(request.url);
         // Throw to trigger Crawlee's built-in retry
