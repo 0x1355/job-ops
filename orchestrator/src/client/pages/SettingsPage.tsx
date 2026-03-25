@@ -6,8 +6,12 @@ import { useTracerReadiness } from "@client/hooks/useTracerReadiness";
 import {
   coerceRxResumeMode,
   getRxResumeCredentialDrafts,
+  getRxResumeCredentialPrecheckFailure,
+  isRxResumeAvailabilityValidationFailure,
+  isRxResumeBlockingValidationFailure,
   RXRESUME_MODES,
   RXRESUME_PRECHECK_MESSAGES,
+  toRxResumeValidationPayload,
   validateAndMaybePersistRxResumeMode,
 } from "@client/lib/rxresume-config";
 import { BackupSettingsSection } from "@client/pages/settings/components/BackupSettingsSection";
@@ -37,6 +41,7 @@ import type {
   ResumeProjectCatalogItem,
   ResumeProjectsSettings,
   RxResumeMode,
+  ValidationResult,
 } from "@shared/types.js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
@@ -68,6 +73,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   rxresumeMode: "v5",
   rxresumeBaseResumeId: null,
   showSponsorInfo: null,
+  renderMarkdownInJobDescriptions: null,
   chatStyleTone: "",
   chatStyleFormality: "",
   chatStyleConstraints: "",
@@ -101,12 +107,30 @@ type RxResumeValidationBadgeState = {
   checked: boolean;
   valid: boolean;
   message: string | null;
+  status: number | null;
 };
 const EMPTY_RXRESUME_VALIDATION_BADGE_STATE: RxResumeValidationBadgeState = {
   checked: false,
   valid: false,
   message: null,
+  status: null,
 };
+
+const getRxResumeValidationFieldsForMode = (
+  mode: RxResumeMode,
+): Array<keyof UpdateSettingsInput> =>
+  mode === "v5"
+    ? ["rxresumeApiKey", "rxresumeUrl"]
+    : ["rxresumeEmail", "rxresumePassword", "rxresumeUrl"];
+
+const toRxResumeValidationBadgeState = (
+  validation: ValidationResult,
+): RxResumeValidationBadgeState => ({
+  checked: true,
+  valid: validation.valid,
+  message: validation.valid ? null : (validation.message ?? null),
+  status: validation.valid ? null : (validation.status ?? null),
+});
 
 const normalizeLlmProviderValue = (
   value: string | null | undefined,
@@ -126,6 +150,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   rxresumeMode: null,
   rxresumeBaseResumeId: null,
   showSponsorInfo: null,
+  renderMarkdownInJobDescriptions: null,
   chatStyleTone: null,
   chatStyleFormality: null,
   chatStyleConstraints: null,
@@ -169,6 +194,8 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   rxresumeMode: data.rxresumeMode.override ?? data.rxresumeMode.value,
   rxresumeBaseResumeId: data.rxresumeBaseResumeId,
   showSponsorInfo: data.showSponsorInfo.override,
+  renderMarkdownInJobDescriptions:
+    data.renderMarkdownInJobDescriptions.override,
   chatStyleTone: data.chatStyleTone.override ?? "",
   chatStyleFormality: data.chatStyleFormality.override ?? "",
   chatStyleConstraints: data.chatStyleConstraints.override ?? "",
@@ -273,8 +300,14 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       default: settings?.jobCompleteWebhookUrl?.default ?? "",
     },
     display: {
-      effective: settings?.showSponsorInfo?.value ?? true,
-      default: settings?.showSponsorInfo?.default ?? true,
+      showSponsorInfo: {
+        effective: settings?.showSponsorInfo?.value ?? true,
+        default: settings?.showSponsorInfo?.default ?? true,
+      },
+      renderMarkdownInJobDescriptions: {
+        effective: settings?.renderMarkdownInJobDescriptions?.value ?? true,
+        default: settings?.renderMarkdownInJobDescriptions?.default ?? true,
+      },
     },
     chat: {
       tone: {
@@ -404,6 +437,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const {
+    clearErrors,
     handleSubmit,
     reset,
     setError,
@@ -598,6 +632,27 @@ export const SettingsPage: React.FC = () => {
     }
   }, [refreshReadiness]);
 
+  const setRxResumeValidationStatus = useCallback(
+    (mode: RxResumeMode, validation: ValidationResult) => {
+      setRxresumeValidationStatuses((current) => ({
+        ...current,
+        [mode]: toRxResumeValidationBadgeState(validation),
+      }));
+    },
+    [],
+  );
+
+  const clearRxResumeValidationFeedback = useCallback(
+    (mode: RxResumeMode) => {
+      setRxresumeValidationStatuses((current) => ({
+        ...current,
+        [mode]: EMPTY_RXRESUME_VALIDATION_BADGE_STATE,
+      }));
+      clearErrors(getRxResumeValidationFieldsForMode(mode));
+    },
+    [clearErrors],
+  );
+
   const validateRxresumeMode = useCallback(
     async (
       mode: RxResumeMode,
@@ -614,6 +669,7 @@ export const SettingsPage: React.FC = () => {
         validate: api.validateRxresume,
         persist: api.updateSettings,
         persistOnSuccess,
+        skipPrecheck: silent,
         getPrecheckMessage: (failure) => RXRESUME_PRECHECK_MESSAGES[failure],
         getValidationErrorMessage: (error) =>
           error instanceof Error ? error.message : "RxResume validation failed",
@@ -621,16 +677,7 @@ export const SettingsPage: React.FC = () => {
           error instanceof Error ? error.message : "RxResume validation failed",
       });
 
-      setRxresumeValidationStatuses((current) => ({
-        ...current,
-        [mode]: {
-          checked: true,
-          valid: result.validation.valid,
-          message: result.validation.valid
-            ? null
-            : (result.validation.message ?? null),
-        },
-      }));
+      setRxResumeValidationStatus(mode, result.validation);
 
       if (result.updatedSettings) {
         setSettings(result.updatedSettings);
@@ -661,7 +708,7 @@ export const SettingsPage: React.FC = () => {
           `Reactive Resume ${mode} validation failed`,
       );
     },
-    [getValues, queryClient, storedRxResume],
+    [getValues, queryClient, setRxResumeValidationStatus, storedRxResume],
   );
 
   useEffect(() => {
@@ -677,7 +724,7 @@ export const SettingsPage: React.FC = () => {
         validateRxresumeMode(mode, { silent: true, persistOnSuccess: false }),
       ),
     );
-  }, [settings, rxresumeValidationStatuses, validateRxresumeMode]);
+  }, [rxresumeValidationStatuses, settings, validateRxresumeMode]);
 
   const effectiveProfileProjects =
     rxResumeProjectsOverride ??
@@ -786,17 +833,44 @@ export const SettingsPage: React.FC = () => {
         if (value !== undefined) envPayload.webhookSecret = value;
       }
 
-      const payload: UpdateSettingsInput = {
-        model: normalizeString(data.model),
-        modelScorer: normalizeString(data.modelScorer),
-        modelTailoring: normalizeString(data.modelTailoring),
-        modelProjectSelection: normalizeString(data.modelProjectSelection),
+      const payload: Partial<UpdateSettingsInput> = {
+        model: dirtyFields.llmProvider
+          ? dirtyFields.model
+            ? normalizeString(data.model)
+            : null
+          : normalizeString(data.model),
+        modelScorer: dirtyFields.llmProvider
+          ? dirtyFields.modelScorer
+            ? normalizeString(data.modelScorer)
+            : null
+          : normalizeString(data.modelScorer),
+        modelTailoring: dirtyFields.llmProvider
+          ? dirtyFields.modelTailoring
+            ? normalizeString(data.modelTailoring)
+            : null
+          : normalizeString(data.modelTailoring),
+        modelProjectSelection: dirtyFields.llmProvider
+          ? dirtyFields.modelProjectSelection
+            ? normalizeString(data.modelProjectSelection)
+            : null
+          : normalizeString(data.modelProjectSelection),
         pipelineWebhookUrl: normalizeString(data.pipelineWebhookUrl),
         jobCompleteWebhookUrl: normalizeString(data.jobCompleteWebhookUrl),
         resumeProjects: resumeProjectsOverride,
-        rxresumeMode: data.rxresumeMode ?? "v5",
-        rxresumeBaseResumeId: normalizeString(data.rxresumeBaseResumeId),
-        showSponsorInfo: nullIfSame(data.showSponsorInfo, display.default),
+        ...(dirtyFields.rxresumeMode
+          ? { rxresumeMode: data.rxresumeMode ?? "v5" }
+          : {}),
+        ...(dirtyFields.rxresumeBaseResumeId
+          ? { rxresumeBaseResumeId: normalizeString(data.rxresumeBaseResumeId) }
+          : {}),
+        showSponsorInfo: nullIfSame(
+          data.showSponsorInfo,
+          display.showSponsorInfo.default,
+        ),
+        renderMarkdownInJobDescriptions: nullIfSame(
+          data.renderMarkdownInJobDescriptions,
+          display.renderMarkdownInJobDescriptions.default,
+        ),
         chatStyleTone: normalizeString(data.chatStyleTone),
         chatStyleFormality: normalizeString(data.chatStyleFormality),
         chatStyleConstraints: normalizeString(data.chatStyleConstraints),
@@ -836,15 +910,88 @@ export const SettingsPage: React.FC = () => {
         ...envPayload,
       };
 
-      // Remove virtual field because the backend doesn't expect it
-      // this exists only to toggle the UI
-      // need to track it so that the save button is enabled when it changes
-      delete payload.enableBasicAuth;
+      const shouldValidateRxResumeBeforeSave = Boolean(
+        dirtyFields.rxresumeMode ||
+          dirtyFields.rxresumeUrl ||
+          dirtyFields.rxresumeApiKey ||
+          dirtyFields.rxresumeEmail ||
+          dirtyFields.rxresumePassword,
+      );
+      const rxResumeValidationMode = (data.rxresumeMode ??
+        rxresumeMode) as RxResumeMode;
+      let rxResumeSaveWarningMessage: string | null = null;
+
+      if (shouldValidateRxResumeBeforeSave) {
+        const validationDraft = getRxResumeCredentialDrafts(data);
+        const precheckFailure = getRxResumeCredentialPrecheckFailure({
+          mode: rxResumeValidationMode,
+          stored: storedRxResume,
+          draft: validationDraft,
+        });
+
+        if (!precheckFailure) {
+          const preserveBlankFields = [
+            ...(dirtyFields.rxresumeEmail ? (["email"] as const) : []),
+            ...(dirtyFields.rxresumePassword ? (["password"] as const) : []),
+            ...(dirtyFields.rxresumeApiKey ? (["apiKey"] as const) : []),
+            ...(dirtyFields.rxresumeUrl ? (["baseUrl"] as const) : []),
+          ];
+          const validation = await api.validateRxresume({
+            mode: rxResumeValidationMode,
+            ...toRxResumeValidationPayload(validationDraft, {
+              preserveBlankFields: preserveBlankFields as Array<
+                keyof ReturnType<typeof getRxResumeCredentialDrafts>
+              >,
+            }),
+          });
+
+          setRxResumeValidationStatus(rxResumeValidationMode, validation);
+
+          if (isRxResumeBlockingValidationFailure(validation)) {
+            clearErrors(
+              getRxResumeValidationFieldsForMode(rxResumeValidationMode),
+            );
+            if (rxResumeValidationMode === "v5") {
+              setError("rxresumeApiKey", {
+                type: "manual",
+                message:
+                  validation.message ??
+                  "Reactive Resume v5 API key is invalid.",
+              });
+            } else {
+              setError("rxresumeEmail", {
+                type: "manual",
+                message:
+                  validation.message ??
+                  "Reactive Resume v4 email/password is invalid.",
+              });
+              setError("rxresumePassword", {
+                type: "manual",
+                message:
+                  validation.message ??
+                  "Reactive Resume v4 email/password is invalid.",
+              });
+            }
+            return;
+          }
+
+          clearErrors(
+            getRxResumeValidationFieldsForMode(rxResumeValidationMode),
+          );
+          if (isRxResumeAvailabilityValidationFailure(validation)) {
+            rxResumeSaveWarningMessage =
+              "Settings saved, but JobOps could not verify Reactive Resume because the instance is unavailable.";
+          }
+        }
+      }
 
       const updated = await updateSettingsMutation.mutateAsync(payload);
       setSettings(updated);
       reset(mapSettingsToForm(updated));
       toast.success("Settings saved");
+      if (rxResumeSaveWarningMessage) {
+        toast.info(rxResumeSaveWarningMessage);
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to save settings";
@@ -995,6 +1142,7 @@ export const SettingsPage: React.FC = () => {
             }}
             hasRxResumeAccess={hasRxResumeAccess}
             rxresumeMode={rxresumeMode}
+            onCredentialFieldEdit={clearRxResumeValidationFeedback}
             validationStatuses={rxresumeValidationStatuses}
             profileProjects={effectiveProfileProjects}
             lockedCount={lockedCount}
