@@ -117,7 +117,7 @@ Don't want to self-host? JobOps Cloud gives you your own hosted instance with no
 
 | | BYOK | Zero Setup |
 |---|:---:|:---:|
-| **Price** | £20/month | £50/month |
+| **Price** | £20/month | £30/month |
 | **All features** | ✓ | ✓ |
 | **Your own instance** | ✓ | ✓ |
 | **Managed updates** | ✓ | ✓ |
