@@ -106,11 +106,12 @@ function buildNoVncCommand(args: {
 }): string {
   return `
 NOVNC_LISTEN="${args.novncHost}:${args.novncPort}"
-NOVNC_WEB=$(find /usr -type d -path "*/share/novnc" -o -type d -name novnc 2>/dev/null | head -1)
-if [ -z "$NOVNC_WEB" ]; then
+NOVNC_HTML=$(find /usr/share /usr/local/share /usr/lib -type f -name vnc.html 2>/dev/null | head -1)
+if [ -z "$NOVNC_HTML" ]; then
   echo "noVNC web root not found" >&2
   exit 1
 fi
+NOVNC_WEB=$(dirname "$NOVNC_HTML")
 exec websockify --web "$NOVNC_WEB" "$NOVNC_LISTEN" "${args.vncHost}:${args.vncPort}"
 `;
 }
