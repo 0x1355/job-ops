@@ -89,7 +89,11 @@ vi.mock("@server/services/challenge-viewer", () => ({
   ensureChallengeViewer: vi
     .fn()
     .mockResolvedValue({ available: false, reason: "not a container" }),
-  buildChallengeViewerUrl: vi.fn(() => "http://localhost:6080/vnc.html"),
+  createChallengeViewerSession: vi.fn(() => ({ token: "viewer-token" })),
+  buildChallengeViewerUrl: vi.fn(
+    () => "/challenge-viewer/session/viewer-token/vnc.html",
+  ),
+  proxyChallengeViewerRequest: vi.fn(),
 }));
 
 vi.mock("@server/services/visa-sponsors/index", () => ({

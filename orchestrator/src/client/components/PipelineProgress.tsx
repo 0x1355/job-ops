@@ -2,7 +2,11 @@
  * Live pipeline progress display component.
  */
 
-import { getPipelineProgressSnapshot } from "@client/api";
+import {
+  getPipelineProgressSnapshot,
+  prepareChallengeViewer,
+  solvePipelineChallenge,
+} from "@client/api";
 import {
   sourceLabel as getSourceLabel,
   isExtractorSourceId,
@@ -76,28 +80,12 @@ export const PipelineProgress: React.FC<PipelineProgressProps> = ({
   const handleSolveChallenge = useCallback(async (extractorId: string) => {
     setSolvingExtractor(extractorId);
     try {
-      const viewerRes = await fetch("/api/pipeline/challenge-viewer", {
-        method: "POST",
-      });
-      if (viewerRes.ok) {
-        const viewerPayload = (await viewerRes.json()) as {
-          data?: { available?: boolean; viewerUrl?: string | null };
-        };
-        const viewerUrl = viewerPayload.data?.viewerUrl;
-        if (viewerPayload.data?.available && viewerUrl) {
-          window.open(viewerUrl, "_blank", "noopener");
-        }
+      const viewer = await prepareChallengeViewer();
+      if (viewer.available && viewer.viewerUrl) {
+        window.open(viewer.viewerUrl, "_blank", "noopener");
       }
 
-      const res = await fetch("/api/pipeline/solve-challenge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ extractorId }),
-      });
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
-        console.error("Solve challenge failed:", data.error ?? res.statusText);
-      }
+      await solvePipelineChallenge(extractorId);
     } catch (err) {
       console.error("Solve challenge request failed:", err);
     } finally {

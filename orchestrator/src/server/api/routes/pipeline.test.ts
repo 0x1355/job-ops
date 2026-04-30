@@ -448,7 +448,7 @@ describe.sequential("Pipeline API routes", () => {
     expect(body.ok).toBe(true);
     expect(body.data).toEqual({
       available: true,
-      viewerUrl: "http://localhost:6080/vnc.html",
+      viewerUrl: "/challenge-viewer/session/viewer-token/vnc.html",
       reason: null,
     });
     expect(ensureChallengeViewer).toHaveBeenCalledTimes(1);

@@ -191,9 +191,10 @@ RUN mkdir -p /app/data/pdfs /app/codex-home
 
 ENV DISPLAY=:99
 ENV NOVNC_PORT=6080
+ENV NOVNC_HOST=127.0.0.1
+ENV VNC_HOST=127.0.0.1
 
 EXPOSE 3001
-EXPOSE 6080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3001/health || exit 1

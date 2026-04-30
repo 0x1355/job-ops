@@ -29,6 +29,7 @@ import * as pipelineRepo from "@server/repositories/pipeline";
 import { trackCanonicalActivationEvent } from "@server/services/activation-funnel";
 import {
   buildChallengeViewerUrl,
+  createChallengeViewerSession,
   ensureChallengeViewer,
 } from "@server/services/challenge-viewer";
 import { simulatePipelineRun } from "@server/services/demo-simulator";
@@ -401,16 +402,14 @@ pipelineRouter.get("/challenges", (_req: Request, res: Response) => {
  */
 pipelineRouter.post(
   "/challenge-viewer",
-  async (req: Request, res: Response) => {
+  async (_req: Request, res: Response) => {
     try {
       const status = await ensureChallengeViewer();
+      const session = status.available ? createChallengeViewerSession() : null;
       ok(res, {
         available: status.available,
         viewerUrl: status.available
-          ? buildChallengeViewerUrl({
-              protocol: `${req.protocol}:`,
-              hostname: req.hostname,
-            })
+          ? buildChallengeViewerUrl({ token: session?.token ?? "" })
           : null,
         reason: status.available ? null : status.reason,
       });

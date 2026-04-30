@@ -13,7 +13,6 @@ services:
     container_name: job-ops
     ports:
       - "3005:3001"
-      - "6080:6080"
     volumes:
       # Persist database and generated PDFs
       - ./data:/app/data
